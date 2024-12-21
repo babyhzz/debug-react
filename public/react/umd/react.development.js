@@ -4,21 +4,7 @@
   (global = global || self, factory(global.React = {}));
 }(this, (function (exports) { 'use strict';
 
-  /**
-   * Copyright (c) Facebook, Inc. and its affiliates.
-   *
-   * This source code is licensed under the MIT license found in the
-   * LICENSE file in the root directory of this source tree.
-   */
-  // TODO: this is special because it gets imported during build.
-  //
-  // TODO: 18.0.0 has not been released to NPM;
-  // It exists as a placeholder so that DevTools can support work tag changes between releases.
-  // When we next publish a release, update the matching TODO in backend/renderer.js
-  // TODO: This module is used both by the release scripts and to expose a version
-  // at runtime. We should instead inject the version number as part of the build
-  // process, and use the ReactVersions.js module as the single source of truth.
-  var ReactVersion = '18.3.1';
+  var ReactVersion = '18.3.1-next--';
 
   /**
    * Copyright (c) Facebook, Inc. and its affiliates.
@@ -39,16 +25,12 @@
   var REACT_PROFILER_TYPE = Symbol.for('react.profiler');
   var REACT_PROVIDER_TYPE = Symbol.for('react.provider');
   var REACT_CONTEXT_TYPE = Symbol.for('react.context');
-  var REACT_SERVER_CONTEXT_TYPE = Symbol.for('react.server_context');
   var REACT_FORWARD_REF_TYPE = Symbol.for('react.forward_ref');
   var REACT_SUSPENSE_TYPE = Symbol.for('react.suspense');
   var REACT_SUSPENSE_LIST_TYPE = Symbol.for('react.suspense_list');
   var REACT_MEMO_TYPE = Symbol.for('react.memo');
   var REACT_LAZY_TYPE = Symbol.for('react.lazy');
-  var REACT_DEBUG_TRACING_MODE_TYPE = Symbol.for('react.debug_trace_mode');
   var REACT_OFFSCREEN_TYPE = Symbol.for('react.offscreen');
-  var REACT_CACHE_TYPE = Symbol.for('react.cache');
-  var REACT_SERVER_CONTEXT_DEFAULT_VALUE_NOT_LOADED = Symbol.for('react.default_value');
   var MAYBE_ITERATOR_SYMBOL = Symbol.iterator;
   var FAUX_ITERATOR_SYMBOL = '@@iterator';
   function getIteratorFn(maybeIterable) {
@@ -194,6 +176,7 @@
    */
 
   var enableScopeAPI = false; // Experimental Create Event Handle API.
+  var enableCacheElement = false;
   var enableTransitionTracing = false; // No known bugs, but needs performance testing
 
   var enableLegacyHidden = false; // Enables unstable_avoidThisFallback feature in Fiber
@@ -201,8 +184,6 @@
   // issues in DEV builds.
 
   var enableDebugTracing = false; // Track which Fiber(s) schedule render work.
-
-  var ContextRegistry = {};
 
   /**
    * Copyright (c) Facebook, Inc. and its affiliates.
@@ -219,10 +200,6 @@
   {
     ReactSharedInternals.ReactDebugCurrentFrame = ReactDebugCurrentFrame;
     ReactSharedInternals.ReactCurrentActQueue = ReactCurrentActQueue;
-  }
-
-  {
-    ReactSharedInternals.ContextRegistry = ContextRegistry;
   }
 
   /**
@@ -677,11 +654,6 @@
       case REACT_SUSPENSE_LIST_TYPE:
         return 'SuspenseList';
 
-      case REACT_CACHE_TYPE:
-        {
-          return 'Cache';
-        }
-
     }
 
     if (typeof type === 'object') {
@@ -717,12 +689,6 @@
             } catch (x) {
               return null;
             }
-          }
-
-        case REACT_SERVER_CONTEXT_TYPE:
-          {
-            var context2 = type;
-            return (context2.displayName || context2._globalName) + '.Provider';
           }
 
         // eslint-disable-next-line no-fallthrough
@@ -1666,7 +1632,7 @@
     } // Note: typeof might be other than 'symbol' or 'number' (e.g. if it's a polyfill).
 
 
-    if (type === REACT_FRAGMENT_TYPE || type === REACT_PROFILER_TYPE || enableDebugTracing  || type === REACT_STRICT_MODE_TYPE || type === REACT_SUSPENSE_TYPE || type === REACT_SUSPENSE_LIST_TYPE || enableLegacyHidden  || type === REACT_OFFSCREEN_TYPE || enableScopeAPI  ||  type === REACT_CACHE_TYPE || enableTransitionTracing ) {
+    if (type === REACT_FRAGMENT_TYPE || type === REACT_PROFILER_TYPE || enableDebugTracing  || type === REACT_STRICT_MODE_TYPE || type === REACT_SUSPENSE_TYPE || type === REACT_SUSPENSE_LIST_TYPE || enableLegacyHidden  || type === REACT_OFFSCREEN_TYPE || enableScopeAPI  || enableCacheElement  || enableTransitionTracing ) {
       return true;
     }
 
@@ -1736,17 +1702,6 @@
 
 
     return dispatcher;
-  }
-
-  function getCacheSignal() {
-    var dispatcher = resolveDispatcher(); // $FlowFixMe This is unstable, thus optional
-
-    return dispatcher.getCacheSignal();
-  }
-  function getCacheForType(resourceType) {
-    var dispatcher = resolveDispatcher(); // $FlowFixMe This is unstable, thus optional
-
-    return dispatcher.getCacheForType(resourceType);
   }
   function useContext(Context) {
     var dispatcher = resolveDispatcher();
@@ -1824,11 +1779,6 @@
   function useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot) {
     var dispatcher = resolveDispatcher();
     return dispatcher.useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  }
-  function useCacheRefresh() {
-    var dispatcher = resolveDispatcher(); // $FlowFixMe This is unstable, thus optional
-
-    return dispatcher.useCacheRefresh();
   }
 
   /**
@@ -2599,77 +2549,6 @@
     return newElement;
   }
 
-  var ContextRegistry$1 = ReactSharedInternals.ContextRegistry;
-  function createServerContext(globalName, defaultValue) {
-
-    var wasDefined = true;
-
-    if (!ContextRegistry$1[globalName]) {
-      wasDefined = false;
-      var _context = {
-        $$typeof: REACT_SERVER_CONTEXT_TYPE,
-        // As a workaround to support multiple concurrent renderers, we categorize
-        // some renderers as primary and others as secondary. We only expect
-        // there to be two concurrent renderers at most: React Native (primary) and
-        // Fabric (secondary); React DOM (primary) and React ART (secondary).
-        // Secondary renderers store their context values on separate fields.
-        _currentValue: defaultValue,
-        _currentValue2: defaultValue,
-        _defaultValue: defaultValue,
-        // Used to track how many concurrent renderers this context currently
-        // supports within in a single renderer. Such as parallel server rendering.
-        _threadCount: 0,
-        // These are circular
-        Provider: null,
-        Consumer: null,
-        _globalName: globalName
-      };
-      _context.Provider = {
-        $$typeof: REACT_PROVIDER_TYPE,
-        _context: _context
-      };
-
-      {
-        var hasWarnedAboutUsingConsumer;
-        _context._currentRenderer = null;
-        _context._currentRenderer2 = null;
-        Object.defineProperties(_context, {
-          Consumer: {
-            get: function () {
-              if (!hasWarnedAboutUsingConsumer) {
-                error('Consumer pattern is not supported by ReactServerContext');
-
-                hasWarnedAboutUsingConsumer = true;
-              }
-
-              return null;
-            }
-          }
-        });
-      }
-
-      ContextRegistry$1[globalName] = _context;
-    }
-
-    var context = ContextRegistry$1[globalName];
-
-    if (context._defaultValue === REACT_SERVER_CONTEXT_DEFAULT_VALUE_NOT_LOADED) {
-      context._defaultValue = defaultValue;
-
-      if (context._currentValue === REACT_SERVER_CONTEXT_DEFAULT_VALUE_NOT_LOADED) {
-        context._currentValue = defaultValue;
-      }
-
-      if (context._currentValue2 === REACT_SERVER_CONTEXT_DEFAULT_VALUE_NOT_LOADED) {
-        context._currentValue2 = defaultValue;
-      }
-    } else if (wasDefined) {
-      throw new Error("ServerContext: " + globalName + " already defined");
-    }
-
-    return context;
-  }
-
   /**
    * Copyright (c) Facebook, Inc. and its affiliates.
    *
@@ -3339,10 +3218,6 @@
     ReactSharedInternals$1.ReactDebugCurrentFrame = ReactDebugCurrentFrame;
   }
 
-  {
-    ReactSharedInternals$1.ContextRegistry = ContextRegistry;
-  }
-
   function startTransition(scope, options) {
     var prevTransition = ReactCurrentBatchConfig.transition;
     ReactCurrentBatchConfig.transition = {};
@@ -3638,7 +3513,6 @@
   exports.PureComponent = PureComponent;
   exports.StrictMode = REACT_STRICT_MODE_TYPE;
   exports.Suspense = REACT_SUSPENSE_TYPE;
-  exports.SuspenseList = REACT_SUSPENSE_LIST_TYPE;
   exports.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED = ReactSharedInternals$1;
   exports.act = act;
   exports.cloneElement = cloneElement$1;
@@ -3646,19 +3520,12 @@
   exports.createElement = createElement$1;
   exports.createFactory = createFactory;
   exports.createRef = createRef;
-  exports.createServerContext = createServerContext;
   exports.forwardRef = forwardRef;
   exports.isValidElement = isValidElement;
   exports.lazy = lazy;
   exports.memo = memo;
   exports.startTransition = startTransition;
-  exports.unstable_Cache = REACT_CACHE_TYPE;
-  exports.unstable_DebugTracingMode = REACT_DEBUG_TRACING_MODE_TYPE;
-  exports.unstable_Offscreen = REACT_OFFSCREEN_TYPE;
   exports.unstable_act = act;
-  exports.unstable_getCacheForType = getCacheForType;
-  exports.unstable_getCacheSignal = getCacheSignal;
-  exports.unstable_useCacheRefresh = useCacheRefresh;
   exports.useCallback = useCallback;
   exports.useContext = useContext;
   exports.useDebugValue = useDebugValue;
